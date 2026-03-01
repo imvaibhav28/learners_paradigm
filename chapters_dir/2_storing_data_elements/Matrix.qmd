@@ -1,0 +1,349 @@
+---
+title: Matrix
+code_fold: true
+---
+
+
+### Unified Memory
+
+
+In order to get familiar with concept of unified memory, let's think about how CPU and GPU works under the hood. 
+Each time CPU or GPU are called with a task, there is a 'quick' memory which loads/reloads data from secondary memory to quick
+accessible memory i.e. RAM. This is more like bringing data closer to compute. Now traditionally, the CPU and GPU had their 
+rescpective RAM memories but unified memory brought the concept of shared pool of memory between GPU and CPU.
+
+
+`Unified Memory creates a pool of managed memory that is shared between the CPU and GPU, bridging the CPU-GPU divide. Managed memory is accessible to both the CPU and GPU using a single pointer. The key is that the system automatically migrates data allocated in Unified Memory between host and device so that it looks like CPU memory to code running on the CPU, and like GPU memory to code running on the GPU.`
+
+See @fig-img1 for an illustration. [src](https://developer.nvidia.com/blog/unified-memory-in-cuda-6/)
+
+----
+
+
+
+![Unified Memory](https://developer.nvidia.com/blog/parallelforall/wp-content/uploads/2013/11/unified_memory.png){#fig-img1}
+
+----
+
+### Diving into GPU programming.
+
+Let's start with basic vector addition in C++. 
+
+```cpp
+#include <iostream>
+#include <math.h>
+
+void add(int n,float *x ,float *y)
+{
+    for(int i = 0;i <n; i++)
+    {
+        y[i] = x[i] + y[i];
+    }
+}
+
+
+
+int main (void)
+{
+    int N = 1<<20; //1M elements
+    
+    float *x = new float[N];
+    float *y = new float[N];
+    
+    for (int i =0; i<N;i++)
+    {
+        x[i]=1.0f;
+        y[i]=2.0f;
+    }
+    
+    //add using cpu
+    add(N, x ,y);
+    // Check for errors (all values should be 3.0f)
+     float maxError = 0.0f;
+     for (int i = 0; i < N; i++)
+       maxError = fmax(maxError, fabs(y[i]-3.0f));
+     std::cout << "Max error: " << maxError << std::endl;
+     
+     // Free memory
+     delete [] x;
+     delete [] y;
+     
+     return 0;
+    }
+
+
+```
+
+A quick run in local cpp environment . Refer [this](https://www.geeksforgeeks.org/setting-c-development-environment/) to setup C++ compiler on your local machine
+
+```bash
+g++ matrix_mul.cpp -o add
+./add
+Output:
+Max error: 0
+```
+
+Now the naive addition let's walk through the C++ code **step by step** to understand what it does and how it works.
+
+---
+
+**Header Files**
+
+```cpp
+#include <iostream>
+#include <math.h>
+```
+
+* `#include <iostream>`: Used for input and output, e.g., `std::cout`.
+* `#include <math.h>`: Includes math functions like `fabs()` and `fmax()`.
+
+---
+
+**Function: `add`**
+
+```cpp
+void add(int n, float *x, float *y)
+{
+    for (int i = 0; i < n; i++)
+    {
+        y[i] = x[i] + y[i];
+    }
+}
+```
+
+This function:
+
+* Takes `n` elements of two float arrays: `x` and `y`.
+* For each index `i`, it adds `x[i]` to `y[i]` and stores the result back in `y[i]`.
+
+So, it's **adding vectors** `x` and `y` element-wise, storing the result in `y`.
+
+---
+
+**Main Function**
+
+```cpp
+int main (void)
+```
+
+The entry point of the program.
+
+---
+
+**Step 1: Declare and Allocate Memory**
+
+```cpp
+int N = 1 << 20; // 1 million elements
+float *x = new float[N];
+float *y = new float[N];
+```
+
+* `1 << 20` means `2^20 = 1,048,576`.
+* Allocates two arrays `x` and `y` of size 1 million using `new`.
+
+---
+
+**Step 2: Initialize Arrays**
+
+```cpp
+for (int i = 0; i < N; i++)
+{
+    x[i] = 1.0f;
+    y[i] = 2.0f;
+}
+```
+
+* Fills the `x` array with `1.0f` and the `y` array with `2.0f`.
+* So before addition:
+
+  * `x = [1.0, 1.0, ..., 1.0]`
+  * `y = [2.0, 2.0, ..., 2.0]`
+
+---
+
+**Step 3: Add Arrays Using CPU**
+
+```cpp
+add(N, x, y);
+```
+
+Calls the `add` function:
+
+* `y[i] = x[i] + y[i] = 1.0 + 2.0 = 3.0`
+  Now `y = [3.0, 3.0, ..., 3.0]`
+
+---
+
+**Step 4: Check for Errors**
+
+```cpp
+float maxError = 0.0f;
+for (int i = 0; i < N; i++)
+    maxError = fmax(maxError, fabs(y[i] - 3.0f));
+```
+
+* Checks that each value in `y` is exactly `3.0`.
+* `fabs(y[i] - 3.0f)` measures the absolute error.
+* `fmax` keeps the **maximum** error encountered.
+* For correct execution, `maxError` should be `0.0`.
+
+---
+
+**Step 5: Print Result**
+
+```cpp
+std::cout << "Max error: " << maxError << std::endl;
+```
+
+Prints the maximum error (should be 0.0 if all additions were perfect).
+
+---
+
+**Step 6: Free Allocated Memory**
+
+```cpp
+delete [] x;
+delete [] y;
+```
+
+* Frees the dynamically allocated memory to prevent memory leaks.
+
+---
+
+Now to run this code on GPU cores (using Metal framework), it requires some changes. 
+
+### What exactly is a .metal file?
+
+A .metal file (aka shader) is Apple's native built alternative to OpenGL (deprecated). 
+
+1. The first change is to create a .metal file. In the context of Apple GPUs, "metal file" typically refers to as Metal Shader (Metal Shader Language), which is a small program that runs on the GPU to perform rendering operations. 
+MSL is a variant of C++ designed for GPU programming. In Metal, code that runs on GPUs is called a shader, because historically they were first used to calculate colors in 3D graphics.
+Metal is Apple's low-level graphics API that allows developers to harness the full power of the GPU for various tasks, including rendering, image processing, and compute operations.
+
+```cpp
+#include <metal_stdlib>
+using namespace metal;
+
+kernel void vector_add(
+    const device float *x [[buffer(0)]],
+    const device float *y [[buffer(1)]],
+    device float *result [[buffer(2)]],
+    uint id [[thread_position_in_grid]]
+) {
+    result[id] = x[id] + y[id];
+}
+
+```
+
+Unpacking above program.
+
+
+
+
+Step 2: Set Up C++/Objective-C++ Host Code
+Save this as main.mm (note .mm for Objective-C++):
+
+```cpp
+#import <Metal/Metal.h>
+#include <iostream>
+#include <vector>
+
+int main() {
+    const int N = 1 << 20;
+
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    id<MTLCommandQueue> queue = [device newCommandQueue];
+
+    // Load Metal library
+    NSError *error = nil;
+    NSString *path = @"addVectors.metallib"; // Precompiled Metal library
+    id<MTLLibrary> library = [device newLibraryWithFile:path error:&error];
+    id<MTLFunction> func = [library newFunctionWithName:@"vector_add"];
+    id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:func error:&error];
+
+    // Host arrays
+    std::vector<float> x(N, 1.0f), y(N, 2.0f), result(N);
+
+    // GPU buffers
+    id<MTLBuffer> xBuf = [device newBufferWithBytes:x.data() length:N * sizeof(float) options:0];
+    id<MTLBuffer> yBuf = [device newBufferWithBytes:y.data() length:N * sizeof(float) options:0];
+    id<MTLBuffer> resBuf = [device newBufferWithLength:N * sizeof(float) options:0];
+
+    id<MTLCommandBuffer> cmdBuf = [queue commandBuffer];
+    id<MTLComputeCommandEncoder> encoder = [cmdBuf computeCommandEncoder];
+    [encoder setComputePipelineState:pipeline];
+    [encoder setBuffer:xBuf offset:0 atIndex:0];
+    [encoder setBuffer:yBuf offset:0 atIndex:1];
+    [encoder setBuffer:resBuf offset:0 atIndex:2];
+
+    MTLSize gridSize = MTLSizeMake(N, 1, 1);
+    NSUInteger threadGroupSize = pipeline.maxTotalThreadsPerThreadgroup;
+    MTLSize threadgroupSize = MTLSizeMake(threadGroupSize, 1, 1);
+
+    [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+    [encoder endEncoding];
+    [cmdBuf commit];
+    [cmdBuf waitUntilCompleted];
+
+    float *resData = (float *)resBuf.contents;
+    float maxError = 0.0f;
+    for (int i = 0; i < N; i++) {
+        float err = fabs(resData[i] - 3.0f);
+        if (err > maxError) maxError = err;
+    }
+    std::cout << "Max error: " << maxError << std::endl;
+
+    return 0;
+}
+```
+
+
+#### 🏗️ Step 3: Compile and Run
+
+##### A. Compile the Metal shader:
+
+```bash
+xcrun -sdk macosx metal -c addVectors.metal -o addVectors.air
+xcrun -sdk macosx metallib addVectors.air -o addVectors.metallib
+```
+
+##### B. Compile the main program:
+
+```bash
+clang++ -std=c++17 -framework Metal -framework Foundation main.mm -o vector_add
+```
+
+##### C. Run it:
+
+```bash
+./vector_add
+```
+
+You should see:
+
+```
+Max error: 0
+```
+
+---
+
+
+
+
+----
+
+![MSL](/assets/02-pointers/MSL.svg)
+---
+
+#### Template
+
+| Component           | Purpose          | Changes                 |
+| ------------------- | ---------------- | ----------------------------------------- |
+| `.metal` shader     | Runs on GPU      | Change `result[id] = ...` logic           |
+| `.metallib`         | Compiled shader  | Recompile when shader changes             |
+| `main.mm`           | Host-side driver | Usually unchanged (optional name changes) |
+| `clang++` + `xcrun` | Compile tools    | is Fixed                                     |
+
+---
+
+Now Let's bind everything up as a resuable piece for plugging in metal shaders for other operations.

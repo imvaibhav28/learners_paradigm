@@ -1,0 +1,194 @@
+---
+title: Array
+code_fold: true
+---
+
+# Numbers etc.
+
+Let's think about this. Numbers have different way of getting represented. From Romans 
+using letters (I, V, X, L, C, D, M) to Tally systems all were differnt ways of putting thought of 'counts' in written form.
+
+This brings us to the point of representation of numbers. 
+
+| Number  | 1   | 2   | 3   | 4   | 5   | 10   | 100     | 1000       |
+| ------- | --- | --- | --- | --- | --- | ---- | ------- | ---------- |
+| Roman   | I   | II  | III | IV  | V   | X    | C       | M          |
+| Binary  | 1   | 10  | 11  | 100 | 101 | 1010 | 1100100 | 1111101000 |
+| Decimal | 1   | 2   | 3   | 4   | 5   | 10   | 100     | 1000       |
+
+: Number representation {#tbl-letters}
+
+
+The process of operating on different number representation is strongly associated with the need of grouping and 
+reprenting larger numbers into compact forms. They key difference between these numbers is not just the symbol used for 
+counts but also the `value perceived from each symbol` as shown in Table @tbl-letters. [1]
+
+#### Place holds Value 
+
+Roman numerals as good as it looks on fancy clock dials and book indexes still faced defeat when it came to writing
+larger numbers. The need for different letter arose when larger numbers were getting to difficult to record.  
+
+1. `'V'` was chosen to be 5 because it was harder to write `'IIIII'`.
+2. Similarly `'X'` came in for 10 because it got harder to write 20 as `'VVVV'`.
+
+But this approach still had one drawback. As the counting grew to thousands and tens of thousands there were lots of repetitions of 
+the smaller denominations. ```The oldest noteworthy inscription containing numerals representing very large numbers is on the Columna Rostrata, a monument erected in the Roman Forum to commemorate a victory in 260 bce over Carthage during the First Punic War. In this column a symbol for 100,000, which was an early form of (((I))), 
+was repeated 23 times, making 2,300,000.```. [1]
+
+
+Clearly there was need of more sophisticated ways which gave birth to the idea of "place value systems".
+
+
+## Basic Matrix multiplication
+
+```{C}
+import <stdio.h>
+
+```
+
+
+
+
+References: 
+
+1. [numerals and numeral systems](https://www.britannica.com/science/numeral/Development-of-modern-numerals-and-numeral-systems)
+
+------
+
+
+Reference: https://www.kodeco.com/books/metal-by-tutorials/v2.0/chapters/1-hello-metal
+
+
+### What is rendering?
+The processing of an outline image using color and shading to make it appear solid and three-dimensional.
+
+The process of Metal rendering is much the same no matter the size and complexity of your app, and you’ll become very familiar with the following sequence of drawing your models on the screen:
+
+![img](https://assets.alexandria.raywenderlich.com/books/met/images/250955501a088fd50c3a07dbcaa9e10f3e2287f64dfbc227b15b1aa268be1ec4/original.png){#fig-img1}
+
+See @fig-img1 for an illustration.
+
+```
+import PlaygroundSupport
+import MetalKit
+//PlaygroundSupport lets you see live views in the assistant editor, and MetalKit is a
+//framework that makes using Metal easier
+
+//check for whether GPU is available
+guard let device = MTLCreateSystemDefaultDevice() else {
+  fatalError("GPU is not supported")
+}
+
+
+/**
+ This code configures an MTKView for the Metal renderer. MTKView is a subclass of
+ NSView on macOS and of UIView on iOS. MTLClearColor represents an RGBA value
+ — in this case, cream. The color value is stored in clearColor and is used to set the
+ color of the view.
+ 
+ */
+let frame = CGRect(x: 0, y: 0, width: 600, height: 600)
+let view = MTKView(frame: frame, device: device)
+
+view.clearColor = MTLClearColor(red: 1, green: 1, blue: 0.8, alpha: 1)
+
+
+
+/**
+ Model I/O is a framework that integrates with Metal and SceneKit. Its main purpose
+ is to load 3D models that were created in apps like Blender or Maya, and to set up
+ data buffers for easier rendering.
+ Instead of loading a 3D model, you’ll load a Model I/O basic 3D shape, also called a
+ primitive. A 3D primitive is typically a cube, a sphere, a cylinder or a torus.
+ */
+// 1
+let allocator = MTKMeshBufferAllocator(device: device)
+// 2
+let mdlMesh = MDLMesh(sphereWithExtent: [0.75, 0.75, 0.75],
+                      segments: [100, 100],
+                      inwardNormals: false,
+                      geometryType: .triangles,
+                      allocator: allocator)
+// 3
+let mesh = try MTKMesh(mesh: mdlMesh, device: device)
+
+guard let commandQueue = device.makeCommandQueue() else {
+  fatalError("Could not create a command queue")
+}
+
+/**
+ Ideally shader file should be separate but for now we are going with string format
+ */
+let shader = """
+#include <metal_stdlib> 
+using namespace metal;
+
+struct VertexIn {
+  float4 position [[ attribute(0) ]];
+};
+
+vertex float4 vertex_main(const VertexIn vertex_in [[ stage_in ]]) {
+  return vertex_in.position;
+}
+
+fragment float4 fragment_main() {
+  return float4(1, 0, 0, 1);
+}
+"""
+
+let library = try device.makeLibrary(source: shader, options: nil)
+let vertexFunction = library.makeFunction(name: "vertex_main")
+let fragmentFunction = library.makeFunction(name: "fragment_main")
+
+let pipelineDescriptor = MTLRenderPipelineDescriptor()
+pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+pipelineDescriptor.vertexFunction = vertexFunction
+pipelineDescriptor.fragmentFunction = fragmentFunction
+
+
+pipelineDescriptor.vertexDescriptor =
+     MTKMetalVertexDescriptorFromModelIO(mesh.vertexDescriptor)
+
+let pipelineState =
+  try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+
+// 1
+guard let commandBuffer = commandQueue.makeCommandBuffer(),
+// 2
+  let renderPassDescriptor = view.currentRenderPassDescriptor,
+// 3
+  let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor:
+    renderPassDescriptor)
+else { fatalError() }
+
+renderEncoder.setRenderPipelineState(pipelineState)
+
+renderEncoder.setVertexBuffer(mesh.vertexBuffers[0].buffer,
+                              offset: 0, index: 0)
+
+guard let submesh = mesh.submeshes.first else {
+  fatalError()
+}
+
+
+renderEncoder.drawIndexedPrimitives(type: .triangle,
+                          indexCount: submesh.indexCount,
+                          indexType: submesh.indexType,
+                          indexBuffer: submesh.indexBuffer.buffer,
+                          indexBufferOffset: 0)
+
+
+// 1
+renderEncoder.endEncoding()
+// 2
+guard let drawable = view.currentDrawable else {
+  fatalError()
+}
+// 3
+commandBuffer.present(drawable)
+commandBuffer.commit()
+
+
+PlaygroundPage.current.liveView = view
+
+```

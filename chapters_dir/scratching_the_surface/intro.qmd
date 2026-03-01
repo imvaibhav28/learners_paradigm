@@ -1,0 +1,32 @@
+---
+title: Understanding Metal Pipeline
+---
+
+So let's take it from the top. 
+
+### What exactly is a .metal file?
+
+A .metal file (aka shader) is Apple's native built alternative to OpenGL (deprecated). 
+
+1. Th first change is to create a .metal file. In the context of Apple GPUs, "metal file" typically refers to as Metal Shader (Metal Shader Language), which is a small program that runs on the GPU to perform rendering operations. 
+MSL is a variant of C++ designed for GPU programming. In Metal, code that runs on GPUs is called a shader, because historically they were first used to calculate colors in 3D graphics.
+Metal is Apple's low-level graphics API that allows developers to harness the full power of the GPU for various tasks, including rendering, image processing, and compute operations.
+
+----
+
+![MSL](/assets/02-pointers/MSL.svg)
+
+
+
+
+
+
+Resources:
+
+1. [youtube video on how GPU's work](https://www.youtube.com/watch?v=h9Z4oGN89MU)
+
+2. [30 days of Metal](https://gist.github.com/ole/a1c95cf6a4ebbef2a7827a911301d503)
+
+3. [Apple docs](https://developer.apple.com/documentation/metal/performing-calculations-on-a-gpu)
+
+4. [Apple Metal Language specification](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf)
