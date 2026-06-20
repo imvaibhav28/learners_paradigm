@@ -30,6 +30,9 @@ book:
     - part: "Design"
       chapters:
         - chapters_dir/Design/intro.qmd
+    - part: "W-AGI"
+      chapters:
+        - chapters_dir/AI/intro.qmd
 bibliography: references.bib
 
 format:
